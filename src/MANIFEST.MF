@@ -1,0 +1,7 @@
+Manifest-Version: 1.0
+Ant-Version: Apache Ant 1.7.0
+Created-By: 11.2-b01 (Sun Microsystems Inc.)
+Built-By: Clinton Arnall
+Implementation-Version: 1.0 
+Built-Date: 2011-05-10 19:37:38
+Main-Class: com.tla.kata4.LadderManager

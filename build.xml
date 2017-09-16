@@ -1,0 +1,282 @@
+<?xml version="1.0" ?>
+<!-- $Id: $ -->
+<project name="kata4" default="package">
+    <description>kata4 build file</description>
+    <!-- ================================================================= -->
+    <!-- Standard properties.                                              -->
+    <!-- ================================================================= -->
+
+    <!-- can override any settings here by using a local build.properties -->
+    <property file="build.properties"/>
+
+    <!-- load environment vars into properties, with 'env' prefix -->
+    <property environment="env"/>
+
+    <!-- the main distribution file, either ear, war or jar -->
+    <property name="dist.name" value="${ant.project.name}"/>
+
+    <!-- junit options -->
+    <property name="junit.fork" value="true"/>
+    <property name="junit.forkmode" value="once"/>
+
+    <!-- default log4j debug level: use INFO for production  -->
+    <property name="log.level" value="DEBUG"/>
+
+    
+
+    <!-- ================================================================= -->
+    <!-- Project properties. Override these at build time using eg:        -->
+    <!-- ant -D project.version=1.96                                       -->
+    <!-- ================================================================= -->
+
+    <!-- key build dirs -->
+    <property name="src.dir" location="${basedir}/src"/>
+    <property name="test.dir" location="${basedir}/test"/>
+    <property name="lib.dir" location="${basedir}/lib"/>
+    <property name="build.dir" location="${basedir}/build"/>
+    <property name="doc.dir" location="${build.dir}/doc"/>
+    <property name="classes.dir" location="${build.dir}/classes"/>
+    <property name="cstyle.dir" location="${build.dir}/checkstyle"/>
+    <property name="coverage.dir" location="${build.dir}/coverage"/>
+    
+
+    <!-- ================================================================= -->
+    <!-- JAR file definitions. These are convenience aliases for commonly  -->
+    <!-- used jars. They could be housed in their own props file, eg       -->
+    <!-- <property file="lib.properties"/>                                 -->
+    <!-- ================================================================= -->
+
+    <property name="checkstyle.jar" 
+        value="${test.dir}/lib/checkstyle-all-4.1.jar"/>
+    <property name="log4j.jar" value="${lib.dir}/log4j-1.2.13.jar"/>
+
+
+    <!-- ================================================================= -->
+    <!-- CLASSPATHS                                                        -->
+    <!-- ================================================================= -->
+
+    <!-- Compilation classpath: include all jars in lib dir, if any -->
+    <path id="compile.jars">
+        <fileset dir="${lib.dir}" includes="*.jar"/>
+    </path>
+
+        
+
+    <!-- Test classpath -->
+    <path id="test.jars">
+        <!-- refers to junit test classes & resources -->
+        <pathelement path="${build.dir}/test"/>
+        <pathelement path="${test.dir}"/>
+
+        <!-- Important: we insert the location of the emma compiled classes
+            ahead of the normal compiled classes, so if a coverage test is 
+            running, the emma classes get used first.
+        -->
+        <pathelement location="${coverage.dir}"/>
+
+        <!-- refers to classes to test (in build dir) -->
+        <pathelement location="${classes.dir}" />
+
+        <!-- Refer to paths & libs needed only for testing -->
+        <fileset dir="${test.dir}/lib" includes="*.jar"/>
+
+    </path>
+
+
+    <!-- Classpath defining Emma (code coverage) jars -->
+    <path id="emma.jars">
+        <pathelement location="${test.dir}/lib/emma.jar"/>
+        <pathelement location="${test.dir}/lib/emma_ant.jar"/>
+    </path>
+
+    
+
+    <!-- ================================================================= -->
+    <!-- TARGETS                                                           -->
+    <!-- ================================================================= -->
+
+    <target name="init" description="Creates generated directories">
+
+        <!-- Create required build sub-dirs to hold generated files -->
+        <!-- nb: these should all be deleted by the 'clean' target -->
+	    <mkdir dir="${classes.dir}"/>
+	    <mkdir dir="${doc.dir}"/>
+        <mkdir dir="${build.dir}/test"/>
+        <mkdir dir="${cstyle.dir}"/>
+        <!-- nb: dist dir is created on demand -->
+    </target>
+
+
+    <target name="compile" depends="init"
+	    description="Compiles the source code">
+        <!-- debug trick to print classpath to stdout -->
+        <property name="cp" refid="compile.jars"/>
+        <echo message="classpath is ${cp}"/>
+
+        <javac srcdir="${src.dir}" destdir="${classes.dir}"
+	        debug="true" deprecation="true">
+	        <classpath refid="compile.jars"/>
+            <!--<compilerarg value="-Xlint:unchecked"/>-->
+	    </javac>
+
+    </target>
+
+
+
+    <target name="package" depends="compile"
+        description="Packages the distribution into an archive file">
+        
+        <jar destfile="${build.dir}/${dist.name}.jar" basedir="${classes.dir}"
+            manifest="${src.dir}/MANIFEST.MF" />
+    </target>
+
+
+    <!-- Compile test code -->
+    <target name="test-compile" depends="compile"
+        description="Compiles the junit test code">
+        <javac destdir="${build.dir}/test" srcdir="${test.dir}" 
+            debug="true" deprecation="true" >
+            <classpath refid="test.jars"/>
+        </javac>
+    </target>
+
+
+    <!-- Entry point for all tests -->
+    <target name="test" depends="test-compile"
+        description="Invokes junit tests">
+
+        <junit printsummary="on" haltonfailure="false" fork="${junit.fork}"
+		    forkmode="${junit.forkmode}" failureproperty="junit.failure" 
+            showoutput="true"
+		    dir="${build.dir}/test">
+            <!-- <jvmarg value="-Dlog4j.debug=true"/> -->
+        	<jvmarg value="-noverify"/>
+
+            <classpath refid="test.jars"/>
+	        <formatter type="xml"/>
+            <!-- use a "brief" formatter to print test results to stdout-->
+            <formatter type="brief" usefile="false"/>
+
+            <!-- use a batchtest to auto run all *TestCase classes -->
+	        <batchtest todir="${build.dir}/test" unless="testcase">
+                <fileset dir="${build.dir}/test" includes="**/*TestCase.class"/>
+            </batchtest>
+        </junit>
+    	
+        <antcall target="junitreport"/> <!-- always generate report -->
+
+		<fail if="junit.failure" 
+			message="JUnit tests failed - Fix tests please."/>
+
+    </target>
+
+
+
+	<!-- This target may cause OutOfMemoryError, if so try increasing JVM heap 
+		size, or use -Djunit.fork=true
+    -->
+	<target name="junitreport">
+		<junitreport todir="${build.dir}/test">
+			<fileset dir="${build.dir}/test">
+                <include name="TEST-*.xml"/>
+            </fileset>
+			<report format="frames" todir="${build.dir}/test"/>
+        </junitreport>
+		<echo message="Test report has been created in ${build.dir}/test"/>
+
+        <fail if="junit.failure" message="JUnit tests failed"/>
+    </target>
+
+
+    <target name="javadoc" depends="init"
+        description="Generate javadoc API docs">
+        <javadoc sourcepath="${src.dir}" destdir="${build.dir}/doc"
+            packagenames="*" author="true"
+            version="true" private="true"
+            windowtitle="${ant.project.name} API Documentation" doctitle=
+              "&lt;h1&gt;${ant.project.name} ${project.version} API &lt;/h1&gt;"
+              bottom="Copyright &#169; Clinton Arnall" >
+            <classpath refid="compile.jars"/>
+        </javadoc>
+    </target>
+
+
+	<taskdef resource="checkstyletask.properties" 
+        classpath="${checkstyle.jar}"/>
+    <target name="checkstyle" depends="init" 
+        description="Generate a code style compliance report">
+        <checkstyle config="${test.dir}/sun_checks.xml"
+            failOnViolation="false">
+            <fileset dir="${src.dir}" includes="**/*.java"/>
+            <formatter type="xml" toFile="${cstyle.dir}/checkstyle_errors.xml"/>
+            <classpath refid="compile.jars"/>
+            <classpath path="${classes.dir}"/>
+        </checkstyle>
+
+        <!-- convert checkstyle xml output to a nice html format -->
+        <xslt in="${cstyle.dir}/checkstyle_errors.xml"
+            out="${cstyle.dir}/checkstyle_errors.html"
+            style="${test.dir}/checkstyle-frames.xsl">
+            <!-- force the output dir to overcome a bug -->
+            <param name="output.dir" expression="${cstyle.dir}"/>
+        </xslt>
+
+    </target>
+
+
+
+    <!-- Emma needs class files to instrument. It depends on compile. -->
+    <taskdef resource="emma_ant.properties" classpathref="emma.jars" />
+    <target name="coverage" depends="compile"
+        description="Instrument code, run tests and generate coverage report">
+        <emma enabled="true">
+            <!-- copy instrumented class files to coverage.dir -->
+            <instr instrpath="${classes.dir}" mode="copy" 
+                destdir="${coverage.dir}"
+                metadatafile="${coverage.dir}/coverage.em">
+                <!-- no need to instrument unit test classes -->
+                <filter excludes="*TestCase"/>
+                <property name="coverage.out.file" 
+                    value="${coverage.dir}/coverage.ec"/>
+            </instr>
+        </emma>
+
+        <!-- invoke unit tests --> 
+        <antcall target="test"/>
+
+        <!-- generate coverage report -->
+        <!-- Move the default emma coverage data to the coverage dir -->
+        <move file="${build.dir}/test/coverage.ec" todir="${coverage.dir}" 
+            failonerror="false"/>
+        <emma>
+            <report depth="method">
+                <sourcepath> <dirset dir="${src.dir}"/> </sourcepath>
+                <infileset dir="${coverage.dir}" includes="*.em, *.ec" />
+                <txt outfile="${coverage.dir}/coverage.txt" />
+                <html outfile="${coverage.dir}/coverage.html" />
+                <xml outfile="${coverage.dir}/coverage.xml"/>
+            </report>
+        </emma>
+    </target>
+
+
+
+    <target name="clean" description="Removes all generated directories">
+        <delete dir="${build.dir}"/>
+    </target>
+
+
+    <target name="run" description="Executes the program" depends="package">
+        <echo>java -jar ${build.dir}/${dist.name}.jar football.dat</echo>
+        <java jar="${build.dir}/${dist.name}.jar" 
+            fork="true" failonerror="true">
+            <arg value="football.dat"/>
+        </java>
+
+    </target>
+
+
+    <target name="all" depends="clean, javadoc, checkstyle, coverage, run"
+        description="Invoke all targets"/> 
+
+</project>
